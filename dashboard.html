@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Finance Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, sans-serif; background: #0f1117; color: #e0e0e0; padding: 16px; }
+  h1 { font-size: 1.2rem; margin-bottom: 4px; color: #fff; }
+  .subtitle { font-size: 0.75rem; color: #888; margin-bottom: 16px; }
+  .tabs { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+  .tab { padding: 6px 14px; border-radius: 20px; border: 1px solid #333; background: #1a1d27; color: #aaa; font-size: 0.8rem; cursor: pointer; }
+  .tab.active { background: #4f8ef7; border-color: #4f8ef7; color: #fff; }
+  .card { background: #1a1d27; border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+  .card h2 { font-size: 0.85rem; color: #aaa; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.05em; }
+  .chart-wrap { position: relative; height: 220px; }
+  .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px; }
+  .stat { background: #1a1d27; border-radius: 10px; padding: 12px; }
+  .stat .label { font-size: 0.7rem; color: #888; margin-bottom: 4px; }
+  .stat .value { font-size: 1.3rem; font-weight: 700; color: #fff; }
+  .stat .sub { font-size: 0.7rem; color: #4f8ef7; margin-top: 2px; }
+  .cat-list { display: flex; flex-direction: column; gap: 8px; }
+  .cat-row { display: flex; align-items: center; gap: 8px; }
+  .cat-name { font-size: 0.78rem; width: 100px; flex-shrink: 0; color: #ccc; }
+  .bar-bg { flex: 1; background: #2a2d3a; border-radius: 4px; height: 8px; overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 4px; }
+  .cat-amt { font-size: 0.78rem; width: 60px; text-align: right; color: #fff; }
+  select { background: #2a2d3a; color: #fff; border: 1px solid #333; border-radius: 8px; padding: 6px 10px; font-size: 0.8rem; width: 100%; margin-bottom: 12px; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<div id="app">
+  <h1>Personal Finance Dashboard</h1>
+  <p class="subtitle">2025-2026 &middot; Apple Card + Chase</p>
+  <div class="tabs">
+    <div class="tab active" onclick="showTab('overview')">Overview</div>
+    <div class="tab" onclick="showTab('trends')">Trends</div>
+    <div class="tab" onclick="showTab('categories')">Categories</div>
+  </div>
+  <div id="tab-overview">
+    <div class="stat-grid">
+      <div class="stat"><div class="label">2025 Total Spend</div><div class="value" id="total2025">-</div><div class="sub">excl. rent & loans</div></div>
+      <div class="stat"><div class="label">Avg / Month</div><div class="value" id="avgMonth">-</div><div class="sub">2025</div></div>
+      <div class="stat"><div class="label">Top Category</div><div class="value" style="font-size:1rem" id="topCat">-</div><div class="sub">2025</div></div>
+      <div class="stat"><div class="label">Restaurants 2025</div><div class="value" id="restaurants">-</div><div class="sub">2025</div></div>
+    </div>
+    <div class="card"><h2>Monthly Total Spend</h2><div class="chart-wrap"><canvas id="monthlyChart"></canvas></div></div>
+  </div>
+  <div id="tab-trends" class="hidden">
+    <div class="card"><h2>Spending by Category Over Time</h2><select id="catSelect" onchange="updateTrendChart()"></select><div class="chart-wrap"><canvas id="trendChart"></canvas></div></div>
+  </div>
+  <div id="tab-categories" class="hidden">
+    <div class="card"><h2>Spend by Category</h2><select id="yearSelect" onchange="updateCatList()"><option value="2025">2025</option><option value="2026">2026 (YTD)</option></select><div class="cat-list" id="catList"></div></div>
+    <div class="card"><h2>Category Breakdown</h2><div class="chart-wrap"><canvas id="pieChart"></canvas></div></div>
+  </div>
+</div>
+<script>
+var EXCLUDE=['Student Loan','Auto Loan','ATM Cash'];
+var palette=['#4f8ef7','#f7844f','#4ff7a0','#f7f04f','#c44ff7','#f74f6b','#4ff7f7','#f7c44f','#8ef74f','#7b4ff7','#f74fc4','#4f7bf7'];
+(function(){
+  if(sessionStorage.getItem('auth')!=='1'){
+    var pw=prompt('Enter password:');
+    if(pw!=='busty'){document.body.innerHTML='<p style="color:#888;padding:32px;text-align:center">Access denied.</p>';return;}
+    sessionStorage.setItem('auth','1');
+  }
+})();
+var raw=[
+  {m:'2025-01',cat:'Other',src:'chase',spend:1734.25},{m:'2025-01',cat:'Other',src:'apple',spend:1367.1},{m:'2025-01',cat:'Grocery',src:'apple',spend:464.96},{m:'2025-01',cat:'Utilities',src:'apple',spend:386.58},{m:'2025-01',cat:'Restaurants',src:'apple',spend:340.54},{m:'2025-01',cat:'Student Loan',src:'chase',spend:172.3},{m:'2025-01',cat:'Insurance',src:'apple',spend:123.53},{m:'2025-01',cat:'Utilities',src:'chase',spend:60},{m:'2025-01',cat:'Gas',src:'apple',spend:39.81},{m:'2025-01',cat:'Media',src:'apple',spend:9.99},
+  {m:'2025-02',cat:'Other',src:'chase',spend:1734.25},{m:'2025-02',cat:'Grocery',src:'apple',spend:356.15},{m:'2025-02',cat:'Utilities',src:'apple',spend:330.33},{m:'2025-02',cat:'Restaurants',src:'apple',spend:282.42},{m:'2025-02',cat:'Other',src:'apple',spend:276.76},{m:'2025-02',cat:'Student Loan',src:'chase',spend:172.3},{m:'2025-02',cat:'Insurance',src:'apple',spend:119.55},{m:'2025-02',cat:'Gas',src:'apple',spend:72.07},{m:'2025-02',cat:'Utilities',src:'chase',spend:60},{m:'2025-02',cat:'Media',src:'apple',spend:9.99},
+  {m:'2025-03',cat:'Other',src:'chase',spend:1984.25},{m:'2025-03',cat:'Grocery',src:'apple',spend:597.84},{m:'2025-03',cat:'Utilities',src:'apple',spend:466.97},{m:'2025-03',cat:'Other',src:'apple',spend:369.1},{m:'2025-03',cat:'Restaurants',src:'apple',spend:312.8},{m:'2025-03',cat:'Student Loan',src:'chase',spend:172.3},{m:'2025-03',cat:'Insurance',src:'apple',spend:119.55},{m:'2025-03',cat:'Utilities',src:'chase',spend:60},{m:'2025-03',cat:'Gas',src:'apple',spend:35.87},{m:'2025-03',cat:'Media',src:'apple',spend:9.99},{m:'2025-03',cat:'Govt-services-parking',src:'apple',spend:4.52},
+  {m:'2025-04',cat:'Other',src:'chase',spend:1785.06},{m:'2025-04',cat:'Utilities',src:'apple',spend:464.67},{m:'2025-04',cat:'Restaurants',src:'apple',spend:412.19},{m:'2025-04',cat:'Airlines',src:'apple',spend:387.96},{m:'2025-04',cat:'Grocery',src:'apple',spend:308.21},{m:'2025-04',cat:'Other',src:'apple',spend:261.48},{m:'2025-04',cat:'Student Loan',src:'chase',spend:172.3},{m:'2025-04',cat:'Insurance',src:'apple',spend:119.55},{m:'2025-04',cat:'Utilities',src:'chase',spend:60},{m:'2025-04',cat:'Entertainment',src:'apple',spend:45},{m:'2025-04',cat:'Gas',src:'apple',spend:41.37},{m:'2025-04',cat:'Media',src:'apple',spend:9.99},{m:'2025-04',cat:'Govt-services-parking',src:'apple',spend:3},
+  {m:'2025-05',cat:'Other',src:'chase',spend:2151.02},{m:'2025-05',cat:'Hotels',src:'apple',spend:1441.58},{m:'2025-05',cat:'Other',src:'apple',spend:1059.31},{m:'2025-05',cat:'Entertainment',src:'apple',spend:561.33},{m:'2025-05',cat:'Restaurants',src:'apple',spend:524.61},{m:'2025-05',cat:'Grocery',src:'apple',spend:345.44},{m:'2025-05',cat:'Utilities',src:'apple',spend:330.8},{m:'2025-05',cat:'Student Loan',src:'chase',spend:172.3},{m:'2025-05',cat:'Gas',src:'apple',spend:151.75},{m:'2025-05',cat:'Insurance',src:'apple',spend:119.55},{m:'2025-05',cat:'Utilities',src:'chase',spend:60},{m:'2025-05',cat:'Shopping',src:'apple',spend:29.99},{m:'2025-05',cat:'Media',src:'apple',spend:9.99},{m:'2025-05',cat:'Transportation',src:'apple',spend:4.8},{m:'2025-05',cat:'Govt-services-parking',src:'apple',spend:3},
+  {m:'2025-06',cat:'Other',src:'chase',spend:1734.25},{m:'2025-06',cat:'Utilities',src:'apple',spend:454.62},{m:'2025-06',cat:'Restaurants',src:'apple',spend:415.4},{m:'2025-06',cat:'Other',src:'apple',spend:398.75},{m:'2025-06',cat:'Grocery',src:'apple',spend:372.63},{m:'2025-06',cat:'Student Loan',src:'chase',spend:172.3},{m:'2025-06',cat:'Insurance',src:'apple',spend:119.55},{m:'2025-06',cat:'Gas',src:'apple',spend:81.41},{m:'2025-06',cat:'Utilities',src:'chase',spend:60},{m:'2025-06',cat:'Media',src:'apple',spend:9.99},{m:'2025-06',cat:'Govt-services-parking',src:'apple',spend:3},
+  {m:'2025-07',cat:'Other',src:'chase',spend:1734.25},{m:'2025-07',cat:'Restaurants',src:'apple',spend:496.11},{m:'2025-07',cat:'Utilities',src:'apple',spend:426.27},{m:'2025-07',cat:'Grocery',src:'apple',spend:423.86},{m:'2025-07',cat:'ATM Cash',src:'chase',spend:380},{m:'2025-07',cat:'Other',src:'apple',spend:277.61},{m:'2025-07',cat:'Student Loan',src:'chase',spend:172.3},{m:'2025-07',cat:'Insurance',src:'apple',spend:119.55},{m:'2025-07',cat:'Gas',src:'apple',spend:39.92},{m:'2025-07',cat:'Media',src:'apple',spend:15.99},{m:'2025-07',cat:'Entertainment',src:'apple',spend:15.73},{m:'2025-07',cat:'Govt-services-parking',src:'apple',spend:3},
+  {m:'2025-08',cat:'Other',src:'chase',spend:1867.39},{m:'2025-08',cat:'Other',src:'apple',spend:625.28},{m:'2025-08',cat:'Restaurants',src:'apple',spend:549.79},{m:'2025-08',cat:'Grocery',src:'apple',spend:435.29},{m:'2025-08',cat:'Utilities',src:'apple',spend:428.76},{m:'2025-08',cat:'ATM Cash',src:'chase',spend:415},{m:'2025-08',cat:'Student Loan',src:'chase',spend:172.3},{m:'2025-08',cat:'Gas',src:'apple',spend:114.63},{m:'2025-08',cat:'Entertainment',src:'apple',spend:102.33},{m:'2025-08',cat:'Insurance',src:'apple',spend:99.47},{m:'2025-08',cat:'Govt-services-parking',src:'apple',spend:37},{m:'2025-08',cat:'Alcohol',src:'apple',spend:26.13},{m:'2025-08',cat:'Media',src:'apple',spend:9.99},
+  {m:'2025-09',cat:'Other',src:'chase',spend:1884.25},{m:'2025-09',cat:'Other',src:'apple',spend:1625.99},{m:'2025-09',cat:'Restaurants',src:'apple',spend:677.03},{m:'2025-09',cat:'Grocery',src:'apple',spend:554.75},{m:'2025-09',cat:'Utilities',src:'apple',spend:439.7},{m:'2025-09',cat:'Shopping',src:'apple',spend:244.47},{m:'2025-09',cat:'Auto Loan',src:'chase',spend:180},{m:'2025-09',cat:'Student Loan',src:'chase',spend:172.3},{m:'2025-09',cat:'Insurance',src:'apple',spend:99.47},{m:'2025-09',cat:'Gas',src:'apple',spend:40.15},{m:'2025-09',cat:'Media',src:'apple',spend:9.99},{m:'2025-09',cat:'Govt-services-parking',src:'apple',spend:3},
+  {m:'2025-10',cat:'Other',src:'chase',spend:1734.25},{m:'2025-10',cat:'Hotels',src:'apple',spend:1710},{m:'2025-10',cat:'Other',src:'apple',spend:962.76},{m:'2025-10',cat:'Restaurants',src:'apple',spend:899.63},{m:'2025-10',cat:'Utilities',src:'apple',spend:541.61},{m:'2025-10',cat:'Airlines',src:'apple',spend:516.96},{m:'2025-10',cat:'Grocery',src:'apple',spend:299.02},{m:'2025-10',cat:'Gas',src:'apple',spend:185.22},{m:'2025-10',cat:'Student Loan',src:'chase',spend:172.3},{m:'2025-10',cat:'Media',src:'apple',spend:120.94},{m:'2025-10',cat:'Insurance',src:'apple',spend:99.47},{m:'2025-10',cat:'Utilities',src:'chase',spend:60},{m:'2025-10',cat:'Transportation',src:'apple',spend:58.8},{m:'2025-10',cat:'Restaurants',src:'chase',spend:45},
+  {m:'2025-11',cat:'Rent',src:'chase',spend:1742.99},{m:'2025-11',cat:'Auto Loan',src:'chase',spend:905},{m:'2025-11',cat:'Grocery',src:'apple',spend:549.37},{m:'2025-11',cat:'Utilities',src:'apple',spend:508.05},{m:'2025-11',cat:'Restaurants',src:'apple',spend:321.88},{m:'2025-11',cat:'Other',src:'apple',spend:211.1},{m:'2025-11',cat:'Student Loan',src:'chase',spend:172.3},{m:'2025-11',cat:'Insurance',src:'apple',spend:99.47},{m:'2025-11',cat:'Gas',src:'apple',spend:68.7},{m:'2025-11',cat:'Utilities',src:'chase',spend:60},{m:'2025-11',cat:'Dining',src:'chase',spend:27.06},{m:'2025-11',cat:'Entertainment',src:'apple',spend:12.94},{m:'2025-11',cat:'Media',src:'apple',spend:9.99},{m:'2025-11',cat:'Govt-services-parking',src:'apple',spend:4.97},
+  {m:'2025-12',cat:'Other',src:'apple',spend:781.19},{m:'2025-12',cat:'Grocery',src:'apple',spend:570.11},{m:'2025-12',cat:'Restaurants',src:'apple',spend:567.4},{m:'2025-12',cat:'Utilities',src:'apple',spend:557.51},{m:'2025-12',cat:'Student Loan',src:'chase',spend:172.3},{m:'2025-12',cat:'Insurance',src:'apple',spend:99.47},{m:'2025-12',cat:'Utilities',src:'chase',spend:60},{m:'2025-12',cat:'Gas',src:'apple',spend:57.31},{m:'2025-12',cat:'Media',src:'apple',spend:39.98},{m:'2025-12',cat:'Other',src:'chase',spend:37.1},{m:'2025-12',cat:'Govt-services-parking',src:'apple',spend:3},
+  {m:'2026-01',cat:'Rent',src:'chase',spend:3475.99},{m:'2026-01',cat:'Other',src:'apple',spend:977.37},{m:'2026-01',cat:'Restaurants',src:'apple',spend:453.34},{m:'2026-01',cat:'Grocery',src:'apple',spend:412.44},{m:'2026-01',cat:'Utilities',src:'apple',spend:359.66},{m:'2026-01',cat:'Student Loan',src:'chase',spend:172.3},{m:'2026-01',cat:'Insurance',src:'apple',spend:99.47},{m:'2026-01',cat:'Gas',src:'apple',spend:63.78},{m:'2026-01',cat:'Utilities',src:'chase',spend:60},{m:'2026-01',cat:'Shopping',src:'apple',spend:50.04},{m:'2026-01',cat:'Media',src:'apple',spend:15.94},
+  {m:'2026-02',cat:'Rent',src:'chase',spend:1742.99},{m:'2026-02',cat:'Utilities',src:'apple',spend:492.32},{m:'2026-02',cat:'Other',src:'apple',spend:474.97},{m:'2026-02',cat:'Grocery',src:'apple',spend:413.64},{m:'2026-02',cat:'Restaurants',src:'apple',spend:361.57},{m:'2026-02',cat:'Student Loan',src:'chase',spend:172.3},{m:'2026-02',cat:'Insurance',src:'apple',spend:94.48},{m:'2026-02',cat:'Utilities',src:'chase',spend:60},{m:'2026-02',cat:'Gas',src:'apple',spend:27.33},{m:'2026-02',cat:'Media',src:'apple',spend:9.99},{m:'2026-02',cat:'Govt-services-parking',src:'apple',spend:4.84},
+  {m:'2026-03',cat:'Rent',src:'chase',spend:1742.99},{m:'2026-03',cat:'Student Loan',src:'chase',spend:172.3},{m:'2026-03',cat:'Utilities',src:'chase',spend:60}
+];
+var months2025=raw.filter(function(r){return r.m.startsWith('2025');}).map(function(r){return r.m;}).filter(function(v,i,a){return a.indexOf(v)===i;}).sort();
+var months2026=raw.filter(function(r){return r.m.startsWith('2026');}).map(function(r){return r.m;}).filter(function(v,i,a){return a.indexOf(v)===i;}).sort();
+var allMonths=months2025.concat(months2026);
+function fmt(n){return '$'+Math.round(n).toLocaleString();}
+function monthlyTotal(months,excl){return months.map(function(m){return raw.filter(function(r){return r.m===m&&excl.indexOf(r.cat)===-1;}).reduce(function(s,r){return s+r.spend;},0);});}
+function catTotals(year){var data=raw.filter(function(r){return r.m.startsWith(year)&&EXCLUDE.indexOf(r.cat)===-1;});var map={};data.forEach(function(r){map[r.cat]=(map[r.cat]||0)+r.spend;});return Object.entries(map).sort(function(a,b){return b[1]-a[1];});}
+var trendChart,pieChart;
+function initCharts(){
+  var t2025=monthlyTotal(months2025,EXCLUDE);var total2025=t2025.reduce(function(s,v){return s+v;},0);
+  document.getElementById('total2025').textContent=fmt(total2025);
+  document.getElementById('avgMonth').textContent=fmt(total2025/12);
+  var cats2025=catTotals('2025');document.getElementById('topCat').textContent=cats2025[0][0];
+  var rest=raw.filter(function(r){return r.m.startsWith('2025')&&(r.cat==='Restaurants'||r.cat==='Dining');}).reduce(function(s,r){return s+r.spend;},0);
+  document.getElementById('restaurants').textContent=fmt(rest);
+  var labels=allMonths.map(function(m){var p=m.split('-');return new Date(p[0],p[1]-1).toLocaleDateString('en',{month:'short',year:'2-digit'});});
+  new Chart(document.getElementById('monthlyChart'),{type:'bar',data:{labels:labels,datasets:[{label:'Spend',data:monthlyTotal(allMonths,EXCLUDE),backgroundColor:allMonths.map(function(m){return m.startsWith('2025')?'#4f8ef7':'#f7844f';}),borderRadius:6}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:function(c){return fmt(c.raw);}}}},scales:{y:{ticks:{callback:function(v){return '$'+v.toLocaleString();}},grid:{color:'#2a2d3a'}},x:{grid:{display:false}}}}});
+  var allCats=raw.map(function(r){return r.cat;}).filter(function(v,i,a){return a.indexOf(v)===i&&EXCLUDE.indexOf(v)===-1;}).sort();
+  var sel=document.getElementById('catSelect');allCats.forEach(function(c){var o=document.createElement('option');o.value=c;o.textContent=c;if(c==='Restaurants')o.selected=true;sel.appendChild(o);});
+  updateTrendChart();updateCatList();
+}
+function updateTrendChart(){
+  var cat=document.getElementById('catSelect').value;
+  var data=allMonths.map(function(m){return raw.filter(function(r){return r.m===m&&r.cat===cat;}).reduce(function(s,r){return s+r.spend;},0);});
+  var labels=allMonths.map(function(m){var p=m.split('-');return new Date(p[0],p[1]-1).toLocaleDateString('en',{month:'short',year:'2-digit'});});
+  if(trendChart)trendChart.destroy();
+  trendChart=new Chart(document.getElementById('trendChart'),{type:'line',data:{labels:labels,datasets:[{label:cat,data:data,borderColor:'#4f8ef7',backgroundColor:'rgba(79,142,247,0.15)',fill:true,tension:0.3,pointRadius:4}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:function(c){return fmt(c.raw);}}}},scales:{y:{ticks:{callback:function(v){return '$'+v.toLocaleString();}},grid:{color:'#2a2d3a'}},x:{grid:{display:false}}}}});
+}
+function updateCatList(){
+  var year=document.getElementById('yearSelect').value;var cats=catTotals(year);var max=cats[0][1];
+  document.getElementById('catList').innerHTML=cats.slice(0,10).map(function(c,i){return '<div class="cat-row"><div class="cat-name">'+c[0]+'</div><div class="bar-bg"><div class="bar-fill" style="width:'+(c[1]/max*100).toFixed(1)+'%;background:'+palette[i%palette.length]+'"></div></div><div class="cat-amt">'+fmt(c[1])+'</div></div>';}).join('');
+  if(pieChart)pieChart.destroy();
+  var top8=cats.slice(0,8);var other=cats.slice(8).reduce(function(s,c){return s+c[1];},0);
+  pieChart=new Chart(document.getElementById('pieChart'),{type:'doughnut',data:{labels:top8.map(function(c){return c[0];}).concat(['Other']),datasets:[{data:top8.map(function(c){return c[1];}).concat([other]),backgroundColor:palette.slice(0,8).concat(['#555']),borderWidth:0}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right',labels:{color:'#ccc',font:{size:10},boxWidth:12}}}}});
+}
+function showTab(name){
+  ['overview','trends','categories'].forEach(function(t){document.getElementById('tab-'+t).classList.toggle('hidden',t!==name);});
+  document.querySelectorAll('.tab').forEach(function(el,i){el.classList.toggle('active',['overview','trends','categories'][i]===name);});
+}
+window.onload=initCharts;
+</script>
+</body>
+</html>
